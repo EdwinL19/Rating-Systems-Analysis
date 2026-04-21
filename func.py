@@ -8,6 +8,7 @@ LOG_BASE_10 = np.float32(math.log(10))
 def old_prob_log(r1, r2):
         return 1.0 / (1 + 10 ** ((r2 - r1) / 400))
 
+# returns the probability that player with rating r1 beats player with rating r2
 def prob_log(r1, r2):
     return 1.0 / (1 + np.exp((r2 - r1) / 400 * LOG_BASE_10))
 

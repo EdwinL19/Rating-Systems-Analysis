@@ -12,6 +12,7 @@ class Elo:
         self.true_ratings = np.array(init_true_ratings, dtype=np.float32)
         self.num_players = num_players
         self.rating_const = rating_const
+        self.num_wins = np.zeros(num_players)
 
     def change_const(self, new_const):
         self.rating_const = new_const
@@ -30,6 +31,7 @@ class Elo:
     # 1 = r1 wins, 0 = r2 wins
     def rating_change(self, r1, r2, outcome):
         r1_win_prob = prob_log(r1, r2)
+        # r1_win_prob = 0.5
         change = self.rating_const * (outcome - r1_win_prob)
         return change
     
@@ -62,6 +64,7 @@ class Elo:
         outcomes = np.random.rand(self.num_players) < win_prob
         #print(outcomes)
         self.ratings += self.rating_change(self.ratings, ratings_opp, outcomes)
+        self.num_wins += outcomes.astype(np.int32)
 
     # Simulates given number of random matches between all players initialized
     # Period is the number of games played
@@ -71,8 +74,9 @@ class Elo:
         random = np.random.permutation(num_players)
         id1, id2 = random[::2], random[1::2]
 
-        # print(matches)
         win_prob = prob_log(self.true_ratings[id1], self.true_ratings[id2])
+
+        # print(list(zip(self.true_ratings[id1], self.true_ratings[id2])))
         # print(win_prob)
         # outcomes = np.zeros(self.num_players)
         # outcomes[::2] = np.random.rand(*np.shape(win_prob)) < win_prob
@@ -80,16 +84,32 @@ class Elo:
         outcomes = np.random.rand(*np.shape(win_prob)) < win_prob
         # print(outcomes)
 
+        expected_outcomes = prob_log(self.ratings[id1], self.ratings[id2])
+
+        cross_entropy = -np.mean(
+            outcomes * np.log(expected_outcomes) +
+            (1 - outcomes) * np.log(1 - expected_outcomes)
+        )
+
+        true_loss = -np.mean(
+            outcomes * np.log(win_prob) +
+            (1 - outcomes) * np.log(1 - win_prob)
+        )
+
         r = self.ratings
         change = self.rating_change(
             r[id1], r[id2], outcomes)
         self.ratings[id1] += change
         self.ratings[id2] -= change
+        self.num_wins[id1] += outcomes.astype(np.int32)
+        self.num_wins[id2] += (1 - outcomes).astype(np.int32)
+
+        return cross_entropy - true_loss, win_prob, np.mean(np.abs((self.true_ratings[id1] - self.true_ratings[id2]) - (self.ratings[id1] - self.ratings[id2])))
     
     # Simulates given number of matches with rating based matchmaking
     # Players with similar ratings will be randomly paired into matches
     # Period is n, the number of games played
-    def match_all_realistic(self, p=10):
+    def match_all_realistic(self, p=10, bounded=False):
         ratings = np.copy(self.ratings)
         # noisy_ratings = ratings + np.random.normal(0, 100, size=len(ratings))
         noisy_ratings = ratings + np.random.uniform(-50, 50, size=len(ratings))
@@ -124,6 +144,17 @@ class Elo:
         outcomes = np.random.rand(*np.shape(win_prob)) < win_prob
         # print(outcomes)
 
+        expected_outcomes = prob_log(self.ratings[id1], self.ratings[id2])
+
+        cross_entropy = -np.mean(
+            outcomes * np.log(expected_outcomes) +
+            (1 - outcomes) * np.log(1 - expected_outcomes)
+        )
+
+        true_loss = -np.mean(
+            outcomes * np.log(win_prob) +
+            (1 - outcomes) * np.log(1 - win_prob)
+        )
 
         # # print(matches)
         # win_prob = prob_log(self.true_ratings.reshape(-1, 1), self.true_ratings[matches])
@@ -135,6 +166,14 @@ class Elo:
         change = self.rating_change(r[id1], r[id2], outcomes)
         self.ratings[id1] += change
         self.ratings[id2] -= change
+        np.add.at(self.num_wins, id1, outcomes)
+        np.add.at(self.num_wins, id2, 1 - outcomes)
+
+        # Option to bound ratings between 0 and 3000
+        if bounded:
+            self.ratings = np.clip(self.ratings, 0, 3000)
+
+        return cross_entropy - true_loss, win_prob, np.mean(np.abs((self.true_ratings[id1] - self.true_ratings[id2]) - (self.ratings[id1] - self.ratings[id2])))
 
     # Nicely formatted printing of all player data
     #  ID     Rating    True Rating    
